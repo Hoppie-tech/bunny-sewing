@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>兔子的缝纫空间</title>
+  <link rel="stylesheet" href="style.css?v=16" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐰</text></svg>" />
+</head>
+<body>
+  <!-- 移动端顶部栏（桌面端隐藏） -->
+  <header class="topbar">
+    <div class="topbar-brand"><span id="topbarBunny" class="topbar-bunny"></span>兔子的缝纫空间</div>
+    <span class="top-sync" id="topSync"></span>
+    <div class="topbar-cans">🥕 <span id="topCans">0</span></div>
+  </header>
+
+  <div class="app">
+    <!-- 左侧导航 -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-logo" id="brandLogo"></div>
+        <div class="brand-text">
+          <h1>兔子的</h1>
+          <p>缝纫空间</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="nav-item active" data-action="nav" data-target="home">
+          <span class="nav-icon">🏠</span><span>主页</span>
+        </button>
+        <button class="nav-item" data-action="nav" data-target="fabric">
+          <span class="nav-icon">🧵</span><span>布料</span>
+        </button>
+        <button class="nav-item" data-action="nav" data-target="notion">
+          <span class="nav-icon">📎</span><span>辅料</span>
+        </button>
+        <button class="nav-item" data-action="nav" data-target="work">
+          <span class="nav-icon">🎀</span><span>作品</span>
+        </button>
+        <button class="nav-item" data-action="nav" data-target="tutorial">
+          <span class="nav-icon">📚</span><span>教程</span>
+        </button>
+        <button class="nav-item" data-action="nav" data-target="inspiration">
+          <span class="nav-icon">✨</span><span>灵感</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="sync-status" id="syncStatus"></div>
+        <div class="can-badge">
+          <span>🥕</span>
+          <div>
+            <small>我的胡萝卜</small>
+            <strong id="sideCans">0</strong>
+          </div>
+        </div>
+        <button class="side-signout" data-action="cloud-signout" hidden>退出云账号</button>
+      </div>
+    </aside>
+
+    <!-- 右侧工作区 -->
+    <main class="workspace" id="workspace">
+      <!-- 内容由 app.js 渲染 -->
+    </main>
+  </div>
+
+  <!-- 弹窗容器 -->
+  <div class="modal-mask" id="modalMask" hidden>
+    <div class="modal" id="modalBox"></div>
+  </div>
+
+  <!-- 提示条 -->
+  <div class="toast" id="toast" hidden></div>
+
+  <!-- 礼花层 -->
+  <canvas id="confetti" class="confetti-canvas"></canvas>
+
+  <script src="app.js?v=31"></script>
+</body>
+</html>
