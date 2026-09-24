@@ -110,6 +110,15 @@ const SUPABASE_ANON = 'sb_publishable_y0dCvlt6PvHBy6HR8lUbHg_ehKdT2H9';
 let CLOUD = !!(SUPABASE_URL && SUPABASE_ANON); // 运行时开关，登录页可选“仅本机”
 let _sb = null, _sbLoading = null;
 let SBUser = null; // 当前登录用户（用于同步状态展示）
+let SBToken = null; // 缓存当前会话 access_token，供“关页面自动同步”在页面卸载时构造鉴权头（无需再异步获取）
+let _tokenCached = false; // registerSessionCache 幂等标志
+function registerSessionCache(sb) {
+  if (_tokenCached || !sb || !sb.auth) return;
+  _tokenCached = true;
+  try {
+    sb.auth.onAuthStateChange((_event, session) => { SBToken = (session && session.access_token) ? session.access_token : null; });
+  } catch (_) {}
+}
 async function sbClient() {
   if (!SUPABASE_URL || !SUPABASE_ANON) return null;
   if (_sb) return _sb;
@@ -156,6 +165,7 @@ const Store = {
   _dbp: null,
   _cloudLoaded: false, // 只有成功从云端读取过数据，才允许写回云端（防止空状态覆盖）
   _updatedAt: null, // 最近一次成功落库（云端/本机）的时间戳，用于实时同步的版本判断
+  _lastCloudSync: null, // 最近一次成功写入云端的时间戳，用于状态栏展示“上次同步时间”
   _db() {
     if (!this._dbp) this._dbp = openDB();
     return this._dbp;
@@ -212,7 +222,7 @@ const Store = {
       const localTs = (local.updatedAt) ? new Date(local.updatedAt).getTime() : 0;
       if (cloud && !isEmptyState(cloud) && cloudTs >= localTs) {
         // 云端数据较新或一致：以云端为准
-        try { this.state = Object.assign(DEFAULT_STATE(), cloud); this._lastLoad = 'cloud'; this._updatedAt = (data && data.updated_at) || this._updatedAt; }
+        try { this.state = Object.assign(DEFAULT_STATE(), cloud); this._lastLoad = 'cloud'; this._updatedAt = (data && data.updated_at) || this._updatedAt; Store._lastCloudSync = (data && data.updated_at) || Store._lastCloudSync; }
         catch (_) { this.seed(); this._lastLoad = 'seed'; }
         // 同步把云端最新写回本机，保证离线/弱网时本机也是最新
         try { await this._persistLocal(this._updatedAt); } catch (_) {}
@@ -283,7 +293,7 @@ const Store = {
         if (!sb) return;
         const { data: { user } } = await sb.auth.getUser();
         if (!user) return;
-        try { await sb.from('sewing_state').upsert({ user_id: user.id, data: this.state, updated_at: ts }); flashSynced(); }
+        try { await sb.from('sewing_state').upsert({ user_id: user.id, data: this.state, updated_at: ts }); Store._lastCloudSync = ts; flashSynced(); }
         catch (_) { toast('⚠️ 云端保存失败，已保留在本机，请检查网络后重试'); }
       });
       return;
@@ -446,6 +456,7 @@ function bindSection() {
         Store.load().then(finishBoot);
       },
       'cloud-signout': () => switchAccount(false),
+      'cloud-sync': () => forceCloudSync(),
       // 左上角头像：点击弹出账号菜单
       'avatar-menu': () => openAvatarMenu(t),
       'avatar-switch': () => switchAccount(true),
@@ -1533,7 +1544,17 @@ function finishBoot() {
   setupAvatar();
   render();
   renderSyncStatus();
+  // 离开/切后台/关页面时自动同步一次云端，进一步降低“关站前没存上”的丢失风险
+  if (CLOUD && SBUser && SBUser.id && Store._cloudLoaded) {
+    document.removeEventListener('visibilitychange', _onHidden);
+    window.removeEventListener('pagehide', _onPageHide);
+    document.addEventListener('visibilitychange', _onHidden);
+    window.addEventListener('pagehide', _onPageHide);
+  }
 }
+// 离页自动同步的监听器（保留引用以便去重注册）
+function _onHidden() { if (document.visibilityState === 'hidden') syncOnExit(false); }
+function _onPageHide() { syncOnExit(true); }
 
 /* ---------- 同步状态指示（侧边栏 + 移动端顶栏） ---------- */
 function maskEmail(e) {
@@ -1542,6 +1563,18 @@ function maskEmail(e) {
   if (i <= 1) return e;
   return e[0] + '***' + e.slice(i);
 }
+function fmtSync(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function fmtSyncShort(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 function renderSyncStatus() {
   const s = document.getElementById('syncStatus');
   const t = document.getElementById('topSync');
@@ -1549,8 +1582,9 @@ function renderSyncStatus() {
   let html = '', cls = '', top = '';
   if (CLOUD && SBUser && SBUser.email) {
     cls = 'on';
-    html = '<span class="dot"></span><div class="sync-txt"><b>已同步云端</b><small>' + maskEmail(SBUser.email) + '</small></div>';
-    top = '☁️ 已同步';
+    const last = fmtSync(Store._lastCloudSync);
+    html = '<span class="dot"></span><div class="sync-txt"><b>已同步云端</b><small>' + maskEmail(SBUser.email) + '</small><small class="sync-last">上次同步：' + last + '</small></div><button class="sync-btn" type="button" data-action="cloud-sync">↻ 同步</button>';
+    top = '☁️ ' + fmtSyncShort(Store._lastCloudSync) + ' 已同步';
     if (signout) signout.hidden = false;
   } else if (CLOUD) {
     cls = 'off';
@@ -1563,6 +1597,52 @@ function renderSyncStatus() {
   }
   if (s) { s.className = 'sync-status ' + cls; s.innerHTML = html; }
   if (t) { t.className = 'top-sync ' + cls; t.textContent = top; }
+}
+async function forceCloudSync() {
+  if (!(CLOUD && SBUser)) return toast('请先登录云端后再同步');
+  if (!Store._cloudLoaded) return toast('云端尚未就绪，请稍候或刷新重试');
+  const sb = await sbClient();
+  if (!sb) return toast('⚠️ 云端库未就绪');
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return toast('请先登录云端');
+  const ts = new Date().toISOString();
+  try {
+    await sb.from('sewing_state').upsert({ user_id: user.id, data: Store.state, updated_at: ts });
+    Store._updatedAt = ts; Store._lastCloudSync = ts;
+    flashSynced(); renderSyncStatus();
+    toast('已同步到云端 ☁️ ' + fmtSync(ts));
+  } catch (e) {
+    toast('⚠️ 云端保存失败，已保留在本机，请检查网络后重试');
+  }
+}
+// 离开页面（切后台/锁屏/关站/刷新）时自动再推一次云端，覆盖“最后一次改动后立刻关页面、云端 upsert 尚未完成”的丢失窗口。
+// keepalive=true 用于 pagehide：页面正在卸载，靠 keepalive 保证请求发出，但浏览器限制单请求 ≤64KB，超大体积时跳过（下次打开 load() 会按本机较新自动写回云端兜底）；
+// keepalive=false 用于 visibilitychange→hidden：页面仍在后台存活，用普通 fetch 完整推送（含大体积数据）。
+async function syncOnExit(keepalive) {
+  if (!(CLOUD && SBUser && SBUser.id && Store._cloudLoaded)) return;
+  if (!SBToken) return;
+  if (isEmptyState(Store.state)) return; // 空状态绝不写回云端，防止在 load 未完成等异常下误清空真实数据
+  if (!Store._updatedAt) return; // 本机从未改动，无内容可同步
+  // 本机已与云端一致（_updatedAt <= _lastCloudSync）则跳过，避免无谓请求；
+  // _lastCloudSync 为空（首次登录/未记录过同步时间）但本机有改动时仍推送，以建立同步基线
+  if (Store._lastCloudSync && new Date(Store._updatedAt).getTime() <= new Date(Store._lastCloudSync).getTime()) return;
+  const ts = new Date().toISOString();
+  const payload = { user_id: SBUser.id, data: Store.state, updated_at: ts };
+  const body = JSON.stringify([payload]);
+  if (keepalive && body.length > 60000) return; // 超出 keepalive 上限，跳过；下次打开时 load() 会按本地较新自动写回云端
+  try {
+    await fetch(SUPABASE_URL + '/rest/v1/sewing_state', {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_ANON,
+        'Authorization': 'Bearer ' + SBToken,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates'
+      },
+      body,
+      keepalive: !!keepalive
+    });
+  } catch (_) {}
 }
 function flashSynced() {
   const s = document.getElementById('syncStatus');
@@ -1598,6 +1678,7 @@ function openAvatarMenu(trigger) {
         <div class="am-avatar">🐰</div>
         <div class="am-info"><small>当前账号</small><b>${esc(maskEmail(SBUser.email))}</b></div>
       </div>
+      <button class="am-item" data-action="cloud-sync">☁️ 立即同步云端</button>
       <button class="am-item" data-action="avatar-export">📤 导出备份</button>
       <button class="am-item" data-action="avatar-import">📥 导入备份</button>
       <button class="am-item" data-action="avatar-switch">🔄 切换账号</button>
@@ -1637,7 +1718,7 @@ async function switchAccount(isSwitch) {
     try { await sb.auth.signOut(); } catch (_) {}
     if (_rtChannel && sb) { try { sb.removeChannel(_rtChannel); } catch (_) {} _rtChannel = null; }
   }
-  CLOUD = false; SBUser = null; Store._cloudLoaded = false;
+  CLOUD = false; SBUser = null; Store._cloudLoaded = false; SBToken = null;
   closeAvatarMenu();
   showLogin();
   renderSyncStatus();
@@ -1714,6 +1795,8 @@ async function afterLogin(sb) {
   }
   if (!user) { showLogin(); return; }
   SBUser = user;
+  registerSessionCache(sb);
+  try { const { data: { session } } = await sb.auth.getSession(); SBToken = (session && session.access_token) || null; } catch (_) {}
   $('#loginMask') && ($('#loginMask').hidden = true);
   try {
     await withTimeout(Store.load(), 12000, '读取云端数据超时');
@@ -1745,6 +1828,8 @@ async function boot() {
   }
   const sb = await sbClient();
   const { data: { session } } = await sb.auth.getSession();
+  registerSessionCache(sb);
+  SBToken = (session && session.access_token) || null;
   if (!session) { showLogin(); return; }
   const { data: { user } } = await sb.auth.getUser();
   SBUser = user || null;
