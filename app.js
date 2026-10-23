@@ -390,6 +390,18 @@ function bindSection() {
         if (inp) inp.value = val;
       },
       'insp-draw': () => drawInspiration(t.dataset.type),
+      'insp-random-mix': () => randomMixFabrics(),
+      'insp-toggle-pick': () => toggleInspPick(t.dataset.id),
+      'insp-clear-pick': () => { inspPick = []; render(); toast('已清空选择'); },
+      'insp-start-pick': () => { inspPickMode = true; render(); },
+      'share-image': () => generateShareImage(t.dataset.type),
+      'save-share-image': () => {
+        if (!lastShareImage) return toast('暂无可保存的图片');
+        const a = document.createElement('a');
+        a.href = lastShareImage;
+        a.download = (lastShareType === 'fabric' ? '布料分享' : '作品分享') + '.png';
+        document.body.appendChild(a); a.click(); a.remove();
+      },
       'fabric-add': () => openFabricModal(),
       'fabric-edit': () => openFabricModal(t.dataset.id),
       'fabric-del': () => delItem('fabrics', t.dataset.id),
@@ -648,6 +660,7 @@ function renderFabric() {
   <div class="sum-bar exp"><span class="lbl">💸 布料总支出</span><span class="val">${fmtMoney(totalFabricExpense())}</span></div>
   <div class="section-head">
     <button class="btn" data-action="fabric-add">＋ 添加布料</button>
+    <button class="btn ghost small" data-action="share-image" data-type="fabric">🖼 生成分享图</button>
   </div>
   <div class="filter-bar">
     <div class="fgroup"><label>材质</label><select id="fMaterial">${opt(materials, fabricFilter.material)}</select></div>
@@ -789,6 +802,7 @@ function renderWork() {
   ${sumHtml}
   <div class="section-head">
     <button class="btn" data-action="work-add">＋ 添加${isSell ? '售卖作品' : '作品'}</button>
+    <button class="btn ghost small" data-action="share-image" data-type="work">🖼 生成分享图</button>
   </div>
   ${!isSell ? `
   <div class="work-filter">
@@ -799,19 +813,228 @@ function renderWork() {
   <div class="grid">${cards}</div>`;
 }
 
+/* ============================ 分享图生成 ============================ */
+// 最近一次生成的分享图 dataURL，供「保存图片」按钮下载
+let lastShareImage = '';
+let lastShareType = '';
+
+// 异步加载图片（base64 直接可用；外链图失败返回 null，用占位兜底）
+function loadImg(src) {
+  return new Promise(res => {
+    if (!src || typeof src !== 'string') return res(null);
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => res(null);
+    img.src = src;
+  });
+}
+function roundRectPath(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+// 单行截断（窄卡片只放一行，超长加 …）
+function truncText(ctx, text, maxW) {
+  text = String(text == null ? '' : text);
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = '';
+  for (const ch of text) {
+    if (ctx.measureText(s + ch + '…').width > maxW) break;
+    s += ch;
+  }
+  return s + '…';
+}
+
+// type: 'fabric' | 'work' —— 用 Canvas 绘制一张分享长图并弹预览
+async function generateShareImage(type) {
+  const isFabric = type === 'fabric';
+  const items = isFabric ? Store.state.fabrics : Store.state.works;
+  if (!items || !items.length) return toast(isFabric ? '还没有布料可分享' : '还没有作品可分享');
+
+  const title = '兔子的缝纫空间';
+  const subtitle = isFabric ? '🧵 我的布料分享' : '🎀 我的作品分享';
+  const cols = isFabric ? 3 : 2;
+  const scale = 2;            // 高清倍率
+  const W = 720, pad = 32, gap = 20;
+  const cw = Math.floor((W - pad * 2 - gap * (cols - 1)) / cols);
+  const imgH = cw;            // 缩略图正方形
+  const textH = isFabric ? 56 : 40;
+  const cardH = imgH + textH;
+  const headerH = 150;
+  const rows = Math.ceil(items.length / cols);
+  const H = headerH + pad + rows * (cardH + gap);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W * scale; canvas.height = H * scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+
+  // 背景渐变
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#fff7fb'); bg.addColorStop(1, '#fdeef5');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // 顶部标题
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#d63384';
+  ctx.font = 'bold 30px sans-serif';
+  ctx.fillText(title, W / 2, 62);
+  ctx.fillStyle = '#e068a4';
+  ctx.font = '20px sans-serif';
+  ctx.fillText(subtitle, W / 2, 98);
+  ctx.strokeStyle = '#f3d0e0'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad, 122); ctx.lineTo(W - pad, 122); ctx.stroke();
+
+  // 预加载所有图片
+  const imgs = await Promise.all(items.map(it => loadImg(it && it.image)));
+
+  ctx.textAlign = 'left';
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i] || {};
+    const col = i % cols, row = Math.floor(i / cols);
+    const x = pad + col * (cw + gap);
+    const y = headerH + row * (cardH + gap);
+
+    // 卡片底
+    ctx.fillStyle = '#ffffff';
+    roundRectPath(ctx, x, y, cw, cardH, 14); ctx.fill();
+    ctx.strokeStyle = '#f0d3e2'; ctx.lineWidth = 1;
+    roundRectPath(ctx, x, y, cw, cardH, 14); ctx.stroke();
+
+    // 缩略图区域
+    const tx = x + 8, ty = y + 8, tsize = cw - 16;
+    const img = imgs[i];
+    if (img) {
+      const ir = img.width / img.height;
+      let sw, sh, sx, sy;
+      if (ir > 1) { sh = img.height; sw = sh; sx = (img.width - sw) / 2; sy = 0; }
+      else { sw = img.width; sh = sw; sx = 0; sy = (img.height - sh) / 2; }
+      ctx.save();
+      roundRectPath(ctx, tx, ty, tsize, tsize, 10); ctx.clip();
+      ctx.drawImage(img, sx, sy, sw, sh, tx, ty, tsize, tsize);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#f6eef3';
+      roundRectPath(ctx, tx, ty, tsize, tsize, 10); ctx.fill();
+      ctx.fillStyle = '#c9a6bb';
+      ctx.font = '34px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(isFabric ? '🧵' : '🎀', tx + tsize / 2, ty + tsize / 2 + 12);
+      ctx.textAlign = 'left';
+    }
+
+    // 文字
+    const tx0 = x + 10, tW = cw - 20;
+    ctx.fillStyle = '#3a3a3a';
+    ctx.font = 'bold 15px sans-serif';
+    ctx.fillText(truncText(ctx, it.name || (isFabric ? '未命名布料' : '未命名作品'), tW), tx0, y + imgH + 28);
+    if (isFabric) {
+      ctx.fillStyle = '#9a9a9a';
+      ctx.font = '13px sans-serif';
+      ctx.fillText(truncText(ctx, it.material || '', tW), tx0, y + imgH + 46);
+    }
+  }
+
+  lastShareImage = canvas.toDataURL('image/png');
+  lastShareType = type;
+  openModal(`
+    <h2>🖼 分享图预览</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 12px">手机端长按图片即可保存到相册；电脑端点下方「💾 保存图片」下载</p>
+    <div class="share-img-wrap"><img src="${lastShareImage}" alt="分享图"/></div>
+    <div class="modal-actions">
+      <button class="btn ghost" data-mclose>关闭</button>
+      <button class="btn" data-action="save-share-image">💾 保存图片</button>
+    </div>
+  `);
+}
+
 /* ============================ 灵感 ============================ */
+// 布料搭配状态：用户手动勾选的布料 id 列表；pickMode 表示是否处于"挑选搭配"模式
+let inspPick = [];
+let inspPickMode = false;
+
+// 随机挑 2~3 块布料（默认 3 块，布料不足时自动降级）
+function randomMixFabrics() {
+  const pool = Store.state.fabrics.filter(f => !f.usedUp);
+  if (pool.length < 2) return toast('至少需要 2 块布料才能搭配哦');
+  const n = Math.min(pool.length, Math.random() < 0.5 ? 2 : 3);
+  const picked = [];
+  const copy = [...pool];
+  while (picked.length < n && copy.length) {
+    picked.push(copy.splice(Math.floor(Math.random() * copy.length), 1)[0]);
+  }
+  inspPick = picked.map(f => f.id);
+  inspPickMode = false;
+  render();
+  toast(`搭配好了 ${n} 块布料 ✨`);
+}
+
+// 手动勾选 / 取消勾选一块布料
+function toggleInspPick(id) {
+  if (!id) return;
+  const i = inspPick.indexOf(id);
+  if (i >= 0) inspPick.splice(i, 1);
+  else {
+    if (inspPick.length >= 3) return toast('最多搭配 3 块布料');
+    inspPick.push(id);
+  }
+  render();
+}
+
 function renderInspiration() {
   const s = Store.state;
-  // 配色灵感：基于现有布料/辅料颜色给出推荐
-  const colors = [...new Set([
-    ...s.fabrics.map(f => f.color).filter(Boolean),
-    ...s.notions.map(n => n.color).filter(Boolean),
-  ])];
-  const palette = buildPalette(colors);
-
   const inspWork = randomTutorial();
 
-  const swatches = palette.map(c => `<div class="swatch" style="background:${c.hex}"><span>${esc(c.name)}</span></div>`).join('');
+  // 清理已删除布料留下的悬空 id
+  inspPick = inspPick.filter(id => s.fabrics.some(f => f.id === id));
+  const picked = inspPick.map(id => s.fabrics.find(f => f.id === id)).filter(Boolean);
+
+  // 搭配展示区
+  const mixHtml = picked.length ? `
+    <div class="mix-row">
+      ${picked.map((f, i) => `
+        <div class="mix-item">
+          <div class="mix-thumb">${f.image ? `<img src="${f.image}" alt=""/>` : '<span>🧵</span>'}</div>
+          <div class="mix-name">${esc(f.name || '未命名')}</div>
+          <div class="mix-meta">${esc(f.color || '')}${f.material ? ' · ' + esc(f.material) : ''}</div>
+          ${inspPickMode ? `<button class="mix-remove" type="button" data-action="insp-toggle-pick" data-id="${f.id}" title="移出搭配">✕</button>` : ''}
+          ${i < picked.length - 1 ? '<div class="mix-plus">＋</div>' : ''}
+        </div>
+      `).join('')}
+    </div>
+    <div class="mix-tip">这 ${picked.length} 块搭在一起${picked.length === 2 ? '，温柔又有层次感' : '，主次分明，很适合做拼接作品'} ✨</div>
+  ` : '<div class="empty" style="padding:26px 0"><div class="big">🎨</div>还没有搭配，点下面按钮开始</div>';
+
+  // 挑选池（挑选模式下展示）
+  const pickPool = inspPickMode ? `
+    <div class="pick-pool">
+      <div class="pick-pool-head">点选 2~3 块布料 <span class="muted">已选 ${inspPick.length}/3</span></div>
+      <div class="pick-grid">
+        ${s.fabrics.length ? s.fabrics.map(f => {
+          const on = inspPick.includes(f.id);
+          return `<button class="pick-chip ${on ? 'on' : ''} ${f.usedUp ? 'used' : ''}" type="button" data-action="insp-toggle-pick" data-id="${f.id}">
+            <span class="pick-thumb">${f.image ? `<img src="${f.image}" alt=""/>` : '🧵'}</span>
+            <span class="pick-name">${esc(f.name || '未命名')}</span>
+            ${on ? '<span class="pick-check">✓</span>' : ''}
+          </button>`;
+        }).join('') : '<div class="empty" style="grid-column:1/-1;padding:18px 0">还没有布料，先去「布料」添加</div>'}
+      </div>
+    </div>
+  ` : '';
+
+  // 操作按钮
+  const actions = `
+    <div class="mix-actions">
+      <button class="btn small" type="button" data-action="insp-random-mix">🎲 随机搭配</button>
+      <button class="btn ghost small" type="button" data-action="insp-start-pick">${inspPickMode ? '✋ 挑选中…' : '✋ 自己选'}</button>
+      ${inspPick.length ? `<button class="btn ghost small" type="button" data-action="insp-clear-pick">清空</button>` : ''}
+    </div>
+  `;
 
   return `
   <div class="home-grid">
@@ -827,33 +1050,19 @@ function renderInspiration() {
     </div>
 
     <div class="panel">
-      <h2>🎨 配色灵感</h2>
-      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:8px">基于你现有的${colors.length ? colors.length + '种' : '（暂无）'}布料/辅料颜色智能推荐</p>
-      ${palette.length ? `
-        <div class="palette-row">${swatches}</div>
-        <div class="palette-names">${palette.map(c => esc(c.name)).join(' · ')}</div>
-        <div style="text-align:center;margin-top:14px"><button class="btn ghost small" data-action="insp-draw" data-type="color">🎨 换一组配色</button></div>
-      ` : '<div class="empty"><div class="big">🌈</div>先去布料/辅料添加带颜色的材料吧</div>'}
+      <h2>🧵 布料搭配</h2>
+      <p style="font-size:13px;color:var(--ink-soft);margin-bottom:10px">从你已有的 ${s.fabrics.length} 块布料里挑 2~3 块，看看搭在一起的效果</p>
+      ${mixHtml}
+      ${actions}
+      ${pickPool}
     </div>
   </div>`;
 }
 
-// 简易配色推荐：从已有颜色 + 协调色生成
-const COLOR_HEX = {
-  '奶油白': '#fdf6ec', '樱花粉': '#ffc4d6', '薄荷绿': '#b8e6cf', '雾霾蓝': '#aacbe3',
-  '鹅黄': '#ffe9a8', '薰衣草紫': '#d9c2f0', '焦糖棕': '#c79a6b', '复古红': '#d96b6b',
-  '米白': '#f5efe6', '天蓝': '#bfe3f2', '奶绿': '#cfe8c2', '灰粉': '#e9c9d4',
-};
-function buildPalette(colors) {
-  const base = (colors[Math.floor(Math.random() * colors.length)] || '樱花粉');
-  const pick = (n) => {
-    const pool = Object.keys(COLOR_HEX).filter(c => c !== base);
-    const out = [];
-    while (out.length < n && pool.length) out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
-    return out;
-  };
-  const names = [base, ...pick(3)];
-  return names.map(n => ({ name: n, hex: COLOR_HEX[n] || '#ffd3e3' }));
+function drawInspiration() {
+  // 主页灵感抽取 -> 刷新主页的抽取卡片
+  render();
+  toast('换了一个新灵感 ✨');
 }
 
 /* ---------- 空状态 ---------- */
@@ -1583,7 +1792,7 @@ function renderSyncStatus() {
   if (CLOUD && SBUser && SBUser.email) {
     cls = 'on';
     const last = fmtSync(Store._lastCloudSync);
-    html = '<span class="dot"></span><div class="sync-txt"><b>已同步云端</b><small>' + maskEmail(SBUser.email) + '</small><small class="sync-last">上次同步：' + last + '</small></div><button class="sync-btn" type="button" data-action="cloud-sync">↻ 同步</button>';
+    html = '<span class="dot"></span><div class="sync-txt"><b>已同步云端</b><small>' + maskEmail(SBUser.email) + '</small><small class="sync-last">上次同步：' + last + '</small></div><button class="sync-btn" type="button" data-action="cloud-sync">💾 保存</button>';
     top = '☁️ ' + fmtSyncShort(Store._lastCloudSync) + ' 已同步';
     if (signout) signout.hidden = false;
   } else if (CLOUD) {
@@ -1597,6 +1806,8 @@ function renderSyncStatus() {
   }
   if (s) { s.className = 'sync-status ' + cls; s.innerHTML = html; }
   if (t) { t.className = 'top-sync ' + cls; t.textContent = top; }
+  const ts = document.getElementById('topSave');
+  if (ts) ts.hidden = !(CLOUD && SBUser); // 未登录云端时不显示手动保存按钮
 }
 async function forceCloudSync() {
   if (!(CLOUD && SBUser)) return toast('请先登录云端后再同步');
@@ -1605,15 +1816,32 @@ async function forceCloudSync() {
   if (!sb) return toast('⚠️ 云端库未就绪');
   const { data: { user } } = await sb.auth.getUser();
   if (!user) return toast('请先登录云端');
+  setSaveBtns('saving');
   const ts = new Date().toISOString();
   try {
     await sb.from('sewing_state').upsert({ user_id: user.id, data: Store.state, updated_at: ts });
     Store._updatedAt = ts; Store._lastCloudSync = ts;
     flashSynced(); renderSyncStatus();
-    toast('已同步到云端 ☁️ ' + fmtSync(ts));
+    setSaveBtns('saved'); // 放在 renderSyncStatus 之后，避免重绘把「已保存」冲掉
+    toast('已保存到云端 ☁️ ' + fmtSync(ts));
   } catch (e) {
+    setSaveBtns('idle');
     toast('⚠️ 云端保存失败，已保留在本机，请检查网络后重试');
   }
+}
+// 保存按钮的三态反馈：saving（保存中…）/ saved（✓ 已保存）/ idle（还原）
+function setSaveBtns(state) {
+  const btns = [document.querySelector('.sync-btn'), document.getElementById('topSave')].filter(Boolean);
+  btns.forEach(b => {
+    if (state === 'saving') {
+      b.textContent = '保存中…'; b.disabled = true; b.classList.add('busy');
+    } else if (state === 'saved') {
+      b.textContent = '✓ 已保存'; b.disabled = true; b.classList.add('done');
+      setTimeout(() => { b.textContent = '💾 保存'; b.disabled = false; b.classList.remove('done'); }, 1600);
+    } else {
+      b.textContent = '💾 保存'; b.disabled = false; b.classList.remove('busy', 'done');
+    }
+  });
 }
 // 离开页面（切后台/锁屏/关站/刷新）时自动再推一次云端，覆盖“最后一次改动后立刻关页面、云端 upsert 尚未完成”的丢失窗口。
 // keepalive=true 用于 pagehide：页面正在卸载，靠 keepalive 保证请求发出，但浏览器限制单请求 ≤64KB，超大体积时跳过（下次打开 load() 会按本机较新自动写回云端兜底）；

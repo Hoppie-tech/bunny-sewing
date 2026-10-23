@@ -283,6 +283,53 @@ select { cursor: pointer; }
 .swatch span { position: absolute; bottom: 0; left: 0; right: 0; font-size: 10px; text-align: center; background: rgba(255,255,255,.85); color: var(--ink); padding: 2px; }
 .palette-names { text-align: center; font-size: 12px; color: var(--ink-soft); }
 
+/* 布料搭配 */
+.mix-row { display: flex; align-items: flex-start; justify-content: center; gap: 4px; flex-wrap: wrap; margin: 12px 0; }
+.mix-item { position: relative; width: 88px; text-align: center; }
+.mix-thumb {
+  width: 88px; height: 88px; border-radius: 14px; overflow: hidden; background: var(--milk-2);
+  display: grid; place-items: center; font-size: 26px; border: 1px solid var(--pink-200);
+  box-shadow: var(--shadow-sm);
+}
+.mix-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mix-name { font-size: 12px; font-weight: 700; color: var(--ink); margin-top: 6px; line-height: 1.3;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mix-meta { font-size: 10px; color: var(--ink-soft); margin-top: 1px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mix-plus { position: absolute; right: -14px; top: 34px; font-size: 15px; color: var(--pink-deep); opacity: .65; }
+.mix-remove {
+  position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
+  border: none; background: #fff; color: #d96b6b; font-size: 11px; line-height: 1;
+  cursor: pointer; box-shadow: var(--shadow-sm); display: grid; place-items: center;
+}
+.mix-remove:hover { background: #d96b6b; color: #fff; }
+.mix-tip { text-align: center; font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+.mix-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+
+/* 挑选池 */
+.pick-pool { margin-top: 14px; border-top: 1px dashed var(--pink-200); padding-top: 12px; }
+.pick-pool-head { font-size: 12px; color: var(--ink-soft); margin-bottom: 8px; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 8px; max-height: 260px; overflow-y: auto; }
+.pick-chip {
+  position: relative; border: 1.5px solid var(--pink-200); background: #fff; border-radius: 10px;
+  padding: 6px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.pick-chip:hover { border-color: var(--pink-deep); }
+.pick-chip.on { border-color: var(--pink-deep); box-shadow: 0 0 0 2px rgba(255, 164, 194, .35); background: #fff8fb; }
+.pick-thumb { width: 100%; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--milk-2);
+  display: grid; place-items: center; font-size: 20px; }
+.pick-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.pick-name { font-size: 10px; color: var(--ink); max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-check { position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--pink-deep); color: #fff; font-size: 10px; display: grid; place-items: center; }
+.pick-chip.used { opacity: .55; }
+
+/* 分享图预览弹窗 */
+.share-img-wrap { max-height: 62vh; overflow-y: auto; text-align: center; background: #f6f7f9; border-radius: 12px; padding: 10px; margin-bottom: 14px; }
+.share-img-wrap img { display: inline-block; max-width: 100%; border-radius: 8px; box-shadow: var(--shadow-sm); }
+
 /* ===== 弹窗 ===== */
 .modal-mask {
   position: fixed; inset: 0; background: rgba(93, 75, 83, 0.28);
@@ -510,6 +557,13 @@ select { cursor: pointer; }
   .swatch { width: 46px; height: 64px; }
   .palette-row { gap: 8px; }
 
+  /* 布料搭配：移动端缩小卡片，允许换行 */
+  .mix-item { width: 74px; }
+  .mix-thumb { width: 74px; height: 74px; border-radius: 12px; }
+  .mix-plus { right: -11px; top: 26px; font-size: 13px; }
+  .mix-actions .btn { flex: 1 1 auto; min-width: 0; }
+  .pick-grid { grid-template-columns: repeat(auto-fill, minmax(68px, 1fr)); max-height: 220px; }
+
   .toast { bottom: 80px; font-size: 13px; padding: 10px 18px; }
 }
 
@@ -549,6 +603,18 @@ select { cursor: pointer; }
 .top-sync.on { background: #e8f7ee; color: #1f9d57; }
 .top-sync.local { background: #fff4e5; color: #c47e10; }
 .top-sync.off { background: #f4f5f7; color: #8a8f99; }
+
+/* 移动端顶栏「保存」按钮 */
+.top-save {
+  flex: 0 0 auto; font-size: 11px; font-weight: 700; padding: 5px 10px;
+  border-radius: 999px; border: 1px solid #2bb673; background: #fff;
+  color: #1f9d57; cursor: pointer; white-space: nowrap;
+}
+.top-save:hover { background: #2bb673; color: #fff; }
+.top-save.busy { opacity: .72; cursor: default; }
+.top-save.done { background: #2bb673; color: #fff; cursor: default; }
+.sync-btn.busy { opacity: .72; cursor: default; }
+.sync-btn.done { background: #2bb673; color: #fff; cursor: default; }
 
 /* ---------- 缝纫计时模块 ---------- */
 .sew-hint { text-align: center; margin: 2px 0 10px; color: var(--pink-deep); font-weight: 600; }
