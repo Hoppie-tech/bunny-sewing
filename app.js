@@ -273,6 +273,7 @@ const Store = {
       w.date = w.date || '';
       w.difficulty = Number(w.difficulty) || 0;
       w.like = Number(w.like) || 0;
+      if (typeof w.style !== 'string') w.style = '';
     });
     // 老数据可能没有 machine 字段，补默认（image 留空，渲染时自动加版本号获取最新图）
     if (!this.state.machine) this.state.machine = { name: '瓜瓜小王', image: '' };
@@ -344,6 +345,8 @@ function totalWorkIncome() {
 let current = 'home';
 let currentWorkTab = 'self'; // 作品模块顶部切换：'self' 自用 / 'sell' 售卖
 let workFilter = 'all'; // 自用模块内筛选：'all' 全部 / 'self' 自用中 / 'gift' 已赠出 / 'unused' 未使用
+let workGrouped = true; // 作品是否按款式分组展示
+const collapsedStyles = new Set(); // 已折叠收起的款式名集合
 let statRange = 'today'; // today | month : all
 let fabricFilter = { material: '', color: '', style: '' };
 let notionFilter = { category: '' };
@@ -421,6 +424,8 @@ function bindSection() {
       'work-edit': () => openWorkModal({ editId: t.dataset.id }),
       'work-tab': () => { currentWorkTab = t.dataset.tab; render(); },
       'work-filter': () => { workFilter = (workFilter === t.dataset.f) ? 'all' : t.dataset.f; render(); },
+      'work-view-toggle': () => { workGrouped = !workGrouped; render(); },
+      'work-group-toggle': () => { const st = t.dataset.style; if (collapsedStyles.has(st)) collapsedStyles.delete(st); else collapsedStyles.add(st); render(); },
       'sale-add': () => saleAdd(t.dataset.id),
       'sale-del': () => saleDel(t.dataset.id, Number(t.dataset.idx)),
       'use-add': () => useAdd(t.dataset.id),
@@ -754,7 +759,7 @@ function renderWork() {
       return true;
     });
   }
-  const cards = list.length ? list.map(w => {
+  const workCard = (w) => {
     const t = w.tutorialId ? s.tutorials.find(x => x.id === w.tutorialId) : null;
     const recs = w.sales || [];
     const soldCount = recs.length;
@@ -766,6 +771,7 @@ function renderWork() {
       <div class="card-body">
         <h3>${esc(w.name)} ${isS && w.price ? `<span class="price">${fmtMoney(w.price)}</span>` : ''}</h3>
         ${w.fabric ? `<div class="card-meta">🧵 使用布料：${esc(w.fabric)}</div>` : ''}
+        ${w.style ? `<div class="card-meta">🏷 ${esc(w.style)}</div>` : ''}
         <div class="card-meta">📅 ${esc(w.date || '—')}</div>
         <div class="card-meta">⏱ ${w.durationMin ? fmtMin(w.durationMin) : '—'}</div>
         ${w.difficulty ? `<div class="card-meta stars-static">✂️ 难度 ${starStr(w.difficulty)}</div>` : ''}
@@ -788,7 +794,46 @@ function renderWork() {
         </div>
       </div>
     </div>`;
-  }).join('') : emptyState(isSell ? '💰' : '🎀', isSell ? '还没有售卖作品，点上面添加吧' : '还没有自用作品，去做第一个吧');
+  };
+  let cardsHtml;
+  if (!list.length) {
+    cardsHtml = emptyState(isSell ? '💰' : '🎀', isSell ? '还没有售卖作品，点上面添加吧' : '还没有自用作品，去做第一个吧');
+  } else if (workGrouped) {
+    const groups = {};
+    const ungrouped = [];
+    list.forEach(w => {
+      const key = (w.style || '').trim();
+      if (key) (groups[key] = groups[key] || []).push(w);
+      else ungrouped.push(w);
+    });
+    const groupHtml = Object.keys(groups).map(style => {
+      const members = groups[style];
+      const cover = (members.find(m => m.image) || {}).image || '';
+      const gifted = members.filter(m => (m.sales || []).length > 0).length;
+      const used = members.filter(m => (m.uses || []).length > 0 && (m.sales || []).length === 0).length;
+      const unused = members.length - gifted - used;
+      const collapsed = collapsedStyles.has(style);
+      const parts = [];
+      if (gifted) parts.push('🎁 已赠 ' + gifted);
+      if (used) parts.push('🏠 自用 ' + used);
+      if (unused) parts.push('📦 未用 ' + unused);
+      return `
+      <div class="style-group">
+        <div class="style-group-head" data-action="work-group-toggle" data-style="${esc(style)}">
+          <div class="sg-cover">${cover ? `<img src="${cover}"/>` : '🎀'}</div>
+          <div class="sg-info">
+            <h3>${esc(style)} <span class="sg-count">×${members.length}</span></h3>
+            <div class="sg-sum">${parts.join(' · ') || '暂无记录'}</div>
+          </div>
+          <div class="sg-toggle">${collapsed ? '▸' : '▾'}</div>
+        </div>
+        <div class="style-group-body" ${collapsed ? 'hidden' : ''}>${members.map(workCard).join('')}</div>
+      </div>`;
+    }).join('');
+    cardsHtml = groupHtml + ungrouped.map(workCard).join('');
+  } else {
+    cardsHtml = list.map(workCard).join('');
+  }
 
   const sumHtml = isSell
     ? `<div class="sum-bar inc"><span class="lbl">💰 售卖总收入</span><span class="val">${fmtMoney(totalWorkIncome())}</span></div>`
@@ -803,6 +848,7 @@ function renderWork() {
   <div class="section-head">
     <button class="btn" data-action="work-add">＋ 添加${isSell ? '售卖作品' : '作品'}</button>
     <button class="btn ghost small" data-action="share-image" data-type="work">🖼 生成分享图</button>
+    <button class="btn ghost small" data-action="work-view-toggle">${workGrouped ? '▦ 平铺' : '▤ 分组'}</button>
   </div>
   ${!isSell ? `
   <div class="work-filter">
@@ -810,7 +856,7 @@ function renderWork() {
     <button class="wf-btn ${workFilter === 'gift' ? 'on' : ''}" data-action="work-filter" data-f="gift">赠出</button>
     <button class="wf-btn ${workFilter === 'unused' ? 'on' : ''}" data-action="work-filter" data-f="unused">未用</button>
   </div>` : ''}
-  <div class="grid">${cards}</div>`;
+  <div class="grid">${cardsHtml}</div>`;
 }
 
 /* ============================ 分享图生成 ============================ */
@@ -1280,15 +1326,16 @@ const modalSave = {
     const difficulty = Number(v.difficulty) || 0;
     const like = Number(v.like) || 0;
     const price = Number(v.price) || 0;
+    const style = (v.style || '').trim();
     const image = v.image || '';
     const tutorialId = v.tutorialId || '';
     if (v.editId) {
       const w = Store.state.works.find(x => x.id === v.editId);
-      if (w) Object.assign(w, { name: v.name, image, fabric, fabricId, durationMin, date, difficulty, like, price, tutorialId });
+      if (w) Object.assign(w, { name: v.name, image, fabric, fabricId, durationMin, date, difficulty, like, price, tutorialId, style });
       Store.save(); closeModal(); toast('作品已更新 🎀'); render();
       return;
     }
-    Store.state.works.unshift({ id: uid(), name: v.name, image, fabric, fabricId, durationMin, date, difficulty, like, price, tutorialId, sales: [], uses: [], type: (v.fromSew ? 'self' : currentWorkTab) });
+    Store.state.works.unshift({ id: uid(), name: v.name, image, fabric, fabricId, durationMin, date, difficulty, like, price, tutorialId, style, sales: [], uses: [], type: (v.fromSew ? 'self' : currentWorkTab) });
     if (v.fromSew) {
       const r = Store.state.rabbit;
       const cans = Math.floor(durationMin / 30);
@@ -1475,6 +1522,9 @@ function openWorkModal(opts = {}) {
     const desc = [f.material, f.color].filter(Boolean).join(' · ');
     return `<option value="${f.id}" ${w && w.fabricId === f.id ? 'selected' : ''}>${esc(f.name)}${desc ? '（' + esc(desc) + '）' : ''}</option>`;
   })].join('');
+  const style = w ? (w.style || '') : '';
+  const styleNames = [...new Set(Store.state.works.map(x => (x.style || '').trim()).filter(Boolean))];
+  const styleOpts = styleNames.map(n => `<option value="${esc(n)}"></option>`).join('');
   const starRow = (label, key, val) => `
     <div class="field"><label>${label}</label>
       <div class="stars" data-star="${key}">${[1, 2, 3, 4, 5].map(i => `<span class="star ${i <= val ? 'on' : ''}" data-action="star" data-star="${key}" data-val="${i}">★</span>`).join('')}</div>
@@ -1492,6 +1542,10 @@ function openWorkModal(opts = {}) {
       <input id="mImage" type="hidden" value="${esc(image)}" />
     </div>
     <div class="field"><label>🧵 使用布料</label><select id="mFabric">${fabOpts}</select></div>
+    <div class="field"><label>🏷 款式（相同款式自动归一组）</label>
+      <input id="mStyle" list="styleList" value="${esc(style)}" placeholder="如：兔子玩偶（同名款式合并展示）" autocomplete="off" />
+      <datalist id="styleList">${styleOpts}</datalist>
+    </div>
     <div class="field-row">
       <div class="field"><label>📅 制作日期</label><div class="ro-val">${date || '—'}</div></div>
       <div class="field"><label>⏱ 缝纫用时</label><input id="mDuration" type="number" min="0" step="1" value="${durationMin}" placeholder="分钟" /></div>
