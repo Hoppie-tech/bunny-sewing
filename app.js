@@ -809,7 +809,6 @@ function renderWork() {
     const groupHtml = Object.keys(groups).map(style => {
       const members = groups[style];
       const cover = (members.find(m => m.image) || {}).image || '';
-      const latest = members[0] || {};
       const gifted = members.filter(m => (m.sales || []).length > 0).length;
       const used = members.filter(m => (m.uses || []).length > 0 && (m.sales || []).length === 0).length;
       const unused = members.length - gifted - used;
@@ -818,18 +817,21 @@ function renderWork() {
       if (gifted) parts.push('🎁 已赠 ' + gifted);
       if (used) parts.push('🏠 自用 ' + used);
       if (unused) parts.push('📦 未用 ' + unused);
+      const summary = members.length + ' 件：' + (parts.join(' · ') || '暂无记录');
       return `
       <div class="style-group ${open ? 'open' : ''}">
         <div class="card style-card" data-action="work-group-toggle" data-style="${esc(style)}">
-          <div class="card-img">${cover ? `<img src="${cover}"/>` : '🎀'}</div>
+          <div class="card-img">${cover ? `<img src="${cover}"/>` : '🎀'}<span class="sg-badge">×${members.length} 件</span></div>
           <div class="card-body">
-            <h3>${esc(style)} <span class="sg-count">×${members.length}</span></h3>
-            ${latest.fabric ? `<div class="card-meta">🧵 使用布料：${esc(latest.fabric)}</div>` : ''}
-            <div class="card-meta">${parts.join(' · ') || '暂无记录'}</div>
-            <div class="card-meta sg-hint">${open ? '点击收起 ▴' : `点击展开 ${members.length} 件 ▾`}</div>
+            <h3>${esc(style)}</h3>
+            <div class="card-meta">${summary}</div>
           </div>
         </div>
-        <div class="style-group-body" ${open ? '' : 'hidden'}>${members.map(workCard).join('')}</div>
+        <div class="style-group-head" data-action="work-group-toggle" data-style="${esc(style)}">
+          <span class="sg-name">${esc(style)}</span>
+          <button class="btn ghost small" type="button">收起 ▴</button>
+        </div>
+        <div class="style-group-body">${members.map(workCard).join('')}</div>
       </div>`;
     }).join('');
     cardsHtml = groupHtml + ungrouped.map(workCard).join('');

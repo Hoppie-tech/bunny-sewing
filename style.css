@@ -264,15 +264,21 @@ select { cursor: pointer; }
 .wf-btn:hover { border-color: var(--pink-200); }
 .wf-btn.on { background: var(--pink-50); color: var(--pink-deep); border-color: var(--pink-200); font-weight: 600; }
 
-/* 作品按款式分组：收起时是一张和普通卡片一样大小的卡片，展开时占满整行显示每件作品 */
+/* 作品按款式分组：收起时是一张和普通作品卡同尺寸的款式卡，展开时占满整行显示每件实例 */
 .grid .style-group { position: relative; }
 .style-card { cursor: pointer; }
 .style-card:active { transform: none; }
-.sg-count { color: var(--pink-deep); font-weight: 700; }
-.sg-hint { color: var(--pink-deep); }
-.style-group.open { grid-column: 1 / -1; background: var(--cream); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; padding: 14px; }
-.style-group.open .style-card { box-shadow: var(--shadow-sm); }
-.style-group-body { margin-top: 14px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+/* 款式卡角标「×N 件」 */
+.sg-badge { position: absolute; top: 8px; right: 8px; background: var(--pink-deep); color: #fff; font-size: 12px; font-weight: 700; line-height: 1; padding: 3px 8px; border-radius: 999px; box-shadow: var(--shadow-sm); }
+/* 默认（收起）：只显示款式卡，展开头与成员列表均隐藏（用 display 控制，避免 hidden 被覆盖） */
+.style-group-head, .style-group-body { display: none; }
+.style-group.open { grid-column: 1 / -1; }
+.style-group.open .style-card { display: none; }
+/* 展开头：仅分组名 + 收起按钮，尺寸与「生成分享图」按钮条一致（纵向略高） */
+.style-group.open .style-group-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--cream); border-radius: var(--radius); box-shadow: var(--shadow-sm); padding: 14px 16px; margin-bottom: 14px; cursor: pointer; }
+.style-group.open .sg-name { font-size: 16px; font-weight: 700; color: var(--ink); }
+.style-group-body { gap: 18px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.style-group.open .style-group-body { display: grid; }
 .stat-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .stat-mini { background: var(--pink-50); border-radius: var(--radius-sm); padding: 12px; text-align: center; border: 1px solid var(--pink-100); }
 .stat-mini .v { font-size: 20px; font-weight: 800; color: var(--pink-deep); }
@@ -542,6 +548,7 @@ select { cursor: pointer; }
   .draw-thumb { aspect-ratio: 4 / 3; }
 
   .grid { grid-template-columns: 1fr 1fr; gap: 12px; }
+  .style-group-body { grid-template-columns: 1fr 1fr; gap: 12px; }
   .card { border-radius: 14px; }
   .card-img { aspect-ratio: 4 / 3; font-size: 36px; }
   .card-body { padding: 10px 12px 12px; }
