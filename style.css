@@ -264,18 +264,15 @@ select { cursor: pointer; }
 .wf-btn:hover { border-color: var(--pink-200); }
 .wf-btn.on { background: var(--pink-50); color: var(--pink-deep); border-color: var(--pink-200); font-weight: 600; }
 
-/* 作品按款式分组 */
-.grid .style-group { grid-column: 1 / -1; background: var(--cream); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; }
-.style-group-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; }
-.style-group-head:active { background: var(--pink-50); }
-.sg-cover { width: 46px; height: 46px; border-radius: 12px; overflow: hidden; flex: 0 0 auto; background: var(--milk-2); display: flex; align-items: center; justify-content: center; font-size: 22px; }
-.sg-cover img { width: 100%; height: 100%; object-fit: cover; }
-.sg-info { flex: 1; min-width: 0; }
-.sg-info h3 { margin: 0; font-size: 15px; }
-.sg-count { color: var(--pink-deep); margin-left: 4px; font-weight: 700; }
-.sg-sum { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
-.sg-toggle { color: var(--ink-soft); font-size: 14px; }
-.style-group-body { padding: 0 14px 14px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+/* 作品按款式分组：收起时是一张和普通卡片一样大小的卡片，展开时占满整行显示每件作品 */
+.grid .style-group { position: relative; }
+.style-card { cursor: pointer; }
+.style-card:active { transform: none; }
+.sg-count { color: var(--pink-deep); font-weight: 700; }
+.sg-hint { color: var(--pink-deep); }
+.style-group.open { grid-column: 1 / -1; background: var(--cream); border-radius: var(--radius); box-shadow: var(--shadow-sm); overflow: hidden; padding: 14px; }
+.style-group.open .style-card { box-shadow: var(--shadow-sm); }
+.style-group-body { margin-top: 14px; display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .stat-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .stat-mini { background: var(--pink-50); border-radius: var(--radius-sm); padding: 12px; text-align: center; border: 1px solid var(--pink-100); }
 .stat-mini .v { font-size: 20px; font-weight: 800; color: var(--pink-deep); }

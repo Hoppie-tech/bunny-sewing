@@ -346,7 +346,7 @@ let current = 'home';
 let currentWorkTab = 'self'; // 作品模块顶部切换：'self' 自用 / 'sell' 售卖
 let workFilter = 'all'; // 自用模块内筛选：'all' 全部 / 'self' 自用中 / 'gift' 已赠出 / 'unused' 未使用
 let workGrouped = true; // 作品是否按款式分组展示
-const collapsedStyles = new Set(); // 已折叠收起的款式名集合
+const expandedStyles = new Set(); // 已展开的款式名集合（默认全部收起为一张卡片）
 let statRange = 'today'; // today | month : all
 let fabricFilter = { material: '', color: '', style: '' };
 let notionFilter = { category: '' };
@@ -425,7 +425,7 @@ function bindSection() {
       'work-tab': () => { currentWorkTab = t.dataset.tab; render(); },
       'work-filter': () => { workFilter = (workFilter === t.dataset.f) ? 'all' : t.dataset.f; render(); },
       'work-view-toggle': () => { workGrouped = !workGrouped; render(); },
-      'work-group-toggle': () => { const st = t.dataset.style; if (collapsedStyles.has(st)) collapsedStyles.delete(st); else collapsedStyles.add(st); render(); },
+      'work-group-toggle': () => { const st = t.dataset.style; if (expandedStyles.has(st)) expandedStyles.delete(st); else expandedStyles.add(st); render(); },
       'sale-add': () => saleAdd(t.dataset.id),
       'sale-del': () => saleDel(t.dataset.id, Number(t.dataset.idx)),
       'use-add': () => useAdd(t.dataset.id),
@@ -809,25 +809,27 @@ function renderWork() {
     const groupHtml = Object.keys(groups).map(style => {
       const members = groups[style];
       const cover = (members.find(m => m.image) || {}).image || '';
+      const latest = members[0] || {};
       const gifted = members.filter(m => (m.sales || []).length > 0).length;
       const used = members.filter(m => (m.uses || []).length > 0 && (m.sales || []).length === 0).length;
       const unused = members.length - gifted - used;
-      const collapsed = collapsedStyles.has(style);
+      const open = expandedStyles.has(style);
       const parts = [];
       if (gifted) parts.push('🎁 已赠 ' + gifted);
       if (used) parts.push('🏠 自用 ' + used);
       if (unused) parts.push('📦 未用 ' + unused);
       return `
-      <div class="style-group">
-        <div class="style-group-head" data-action="work-group-toggle" data-style="${esc(style)}">
-          <div class="sg-cover">${cover ? `<img src="${cover}"/>` : '🎀'}</div>
-          <div class="sg-info">
+      <div class="style-group ${open ? 'open' : ''}">
+        <div class="card style-card" data-action="work-group-toggle" data-style="${esc(style)}">
+          <div class="card-img">${cover ? `<img src="${cover}"/>` : '🎀'}</div>
+          <div class="card-body">
             <h3>${esc(style)} <span class="sg-count">×${members.length}</span></h3>
-            <div class="sg-sum">${parts.join(' · ') || '暂无记录'}</div>
+            ${latest.fabric ? `<div class="card-meta">🧵 使用布料：${esc(latest.fabric)}</div>` : ''}
+            <div class="card-meta">${parts.join(' · ') || '暂无记录'}</div>
+            <div class="card-meta sg-hint">${open ? '点击收起 ▴' : `点击展开 ${members.length} 件 ▾`}</div>
           </div>
-          <div class="sg-toggle">${collapsed ? '▸' : '▾'}</div>
         </div>
-        <div class="style-group-body" ${collapsed ? 'hidden' : ''}>${members.map(workCard).join('')}</div>
+        <div class="style-group-body" ${open ? '' : 'hidden'}>${members.map(workCard).join('')}</div>
       </div>`;
     }).join('');
     cardsHtml = groupHtml + ungrouped.map(workCard).join('');
@@ -1846,7 +1848,7 @@ function renderSyncStatus() {
   if (CLOUD && SBUser && SBUser.email) {
     cls = 'on';
     const last = fmtSync(Store._lastCloudSync);
-    html = '<span class="dot"></span><div class="sync-txt"><b>已同步云端</b><small>' + maskEmail(SBUser.email) + '</small><small class="sync-last">上次同步：' + last + '</small></div><button class="sync-btn" type="button" data-action="cloud-sync">💾 保存</button>';
+    html = '<span class="dot"></span><div class="sync-txt"><b>已同步云端</b><small>' + maskEmail(SBUser.email) + '</small><small class="sync-last">上次同步：' + last + '</small></div><button class="sync-btn" type="button" data-action="cloud-sync">☁️ 同步到云端</button>';
     top = '☁️ ' + fmtSyncShort(Store._lastCloudSync) + ' 已同步';
     if (signout) signout.hidden = false;
   } else if (CLOUD) {
@@ -1860,8 +1862,6 @@ function renderSyncStatus() {
   }
   if (s) { s.className = 'sync-status ' + cls; s.innerHTML = html; }
   if (t) { t.className = 'top-sync ' + cls; t.textContent = top; }
-  const ts = document.getElementById('topSave');
-  if (ts) ts.hidden = !(CLOUD && SBUser); // 未登录云端时不显示手动保存按钮
 }
 async function forceCloudSync() {
   if (!(CLOUD && SBUser)) return toast('请先登录云端后再同步');
@@ -1885,15 +1885,15 @@ async function forceCloudSync() {
 }
 // 保存按钮的三态反馈：saving（保存中…）/ saved（✓ 已保存）/ idle（还原）
 function setSaveBtns(state) {
-  const btns = [document.querySelector('.sync-btn'), document.getElementById('topSave')].filter(Boolean);
+  const btns = [document.querySelector('.sync-btn')].filter(Boolean);
   btns.forEach(b => {
     if (state === 'saving') {
-      b.textContent = '保存中…'; b.disabled = true; b.classList.add('busy');
+      b.textContent = '同步中…'; b.disabled = true; b.classList.add('busy');
     } else if (state === 'saved') {
-      b.textContent = '✓ 已保存'; b.disabled = true; b.classList.add('done');
-      setTimeout(() => { b.textContent = '💾 保存'; b.disabled = false; b.classList.remove('done'); }, 1600);
+      b.textContent = '✓ 已同步'; b.disabled = true; b.classList.add('done');
+      setTimeout(() => { b.textContent = '☁️ 同步到云端'; b.disabled = false; b.classList.remove('done'); }, 1600);
     } else {
-      b.textContent = '💾 保存'; b.disabled = false; b.classList.remove('busy', 'done');
+      b.textContent = '☁️ 同步到云端'; b.disabled = false; b.classList.remove('busy', 'done');
     }
   });
 }
@@ -1960,7 +1960,7 @@ function openAvatarMenu(trigger) {
         <div class="am-avatar">🐰</div>
         <div class="am-info"><small>当前账号</small><b>${esc(maskEmail(SBUser.email))}</b></div>
       </div>
-      <button class="am-item" data-action="cloud-sync">☁️ 立即同步云端</button>
+      <button class="am-item" data-action="cloud-sync">☁️ 同步到云端</button>
       <button class="am-item" data-action="avatar-export">📤 导出备份</button>
       <button class="am-item" data-action="avatar-import">📥 导入备份</button>
       <button class="am-item" data-action="avatar-switch">🔄 切换账号</button>
